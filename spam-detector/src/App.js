@@ -1,105 +1,148 @@
-import React, {useState} from 'react';
+import React, { useState } from "react";
+import model from "./model.json";
+import "./App.css";
 
 function App() {
-
-    
-  const W = [-0.79365074, -1.42862919, -0.64267635,  0.23266496, -1.52451827, -1.52450185,
-  0.28884792, -0.52293016,  0.64726848,  1.65930291,  0.65332517,  0.65101311,
-  1.35870514, -0.79653738, -0.60817497,  0.55445534, -0.0541138,   1.27296465,
-  0.05069324, -0.45358638,  2.42436609,  0.73294102,  1.02624552, -0.46603087,
-  0.41433459, -0.50482713, -1.7667433 , -0.2400517 , -1.21638841, -0.90744347,
-  -1.21745633 ,  1.23652847 , -0.62924694 , -0.71474333 ,  1.59727459 , -0.44611397,
-  0.98359328, -1.18494044, -0.55345637,  0.97159092,  1.51319626,  0.94609796,
-  0.6590814,   0.47362599, -0.70379231,  0.05488547,  0.31409091];
-
-  const b = 0.94407526;
-
-  const vocab = [
-    "hello", "hope", "doing", "well", "check", "updates", "project", "discussed",
-    "congratulations", "won", "free", "trip", "bahamas", "click", "claim", "prize",
-    "dear", "customer", "noticed", "unusual", "activity", "account", "please", "log", "verify",
-    "hi", "remind", "meeting", "tomorrow", "let", "know", "need", "additional", "information",
-    "get", "rich", "quick", "amazing", "investment", "opportunity", "dont", "miss",
-    "lifetime", "chance", "make", "money", "fast"
-  ];
+  const W = model.weights;
+  const b = model.bias;
+  const vocab = model.vocabulary;
 
   const [email, setEmail] = useState("");
   const [result, setResult] = useState(null);
 
-  const sigmioid = (x) => {
-    return 1/(1+Math.exp(-x));
+  const sigmoid = (x) => {
+    return 1 / (1 + Math.exp(-x));
   };
 
   const emailToVector = (text) => {
-    text = text.toLowerCase().replace(/[^\w\s]/g, '');
-    const words = text.split(" ");
+    text = text.toLowerCase().replace(/[^\w\s]/g, "");
+    const words = text.split(/\s+/);
 
-    return vocab.map(word => words.includes(word) ? 1 : 0);
+    const wordCount = {};
+    words.forEach((word) => {
+      wordCount[word] = (wordCount[word] || 0) + 1;
+    });
 
+    return vocab.map((word) => wordCount[word] || 0);
   };
 
   const classifyEmail = () => {
+    if (!email.trim()) {
+      setResult(null);
+      return;
+    }
+
     const vector = emailToVector(email);
 
     let z = 0;
+    const contributions = [];
 
-    for (let i = 0; i < vector.length; i++) {
-      z += vector[i] * W[i];
+    for (let i = 0; i < W.length; i++) {
+      const contribution = vector[i] * W[i];
+
+      if (vector[i] > 0) {
+        contributions.push({
+          word: vocab[i],
+          value: contribution,
+        });
+      }
+
+      z += contribution;
     }
-    
+
     z += b;
 
-    const probability = sigmioid(z);
-
+    const probability = sigmoid(z);
     const isSpam = probability > 0.5;
+
+    contributions.sort((a, b) => b.value - a.value);
+
+    const topSpam = contributions
+      .filter((item) => item.value > 0)
+      .slice(0, 5);
+
+    const topHam = contributions
+      .filter((item) => item.value < 0)
+      .slice(0, 5);
 
     setResult({
       spam: isSpam,
-      confidence: isSpam ? probability : 1 - probability
+      confidence: isSpam ? probability : 1 - probability,
+      topSpam,
+      topHam,
     });
-
-    if (!email) {
-      setResult(null);
-    }
   };
 
   return (
-    <div style={{ padding: '20px'}}>
+    <div className="app">
+      <div className="container">
+        <h1 style = {{justifyContent:"center", display:"flex", alignItems:"center"}}>Spam Detection System 🤖</h1>
 
-      <div className='container'>
-        <h1>Email Spam Detector</h1>
+        <p className="subtitle" style = {{margin: "20px 40px"}}>
+          Using a simple logistic regression model trained on a bag-of-words representation, this app classifies emails as spam or ham. It also provides insights into which words contributed most to the classification, making it an explainable AI tool for understanding email content.
+        </p>
 
         <textarea
-          rows="15"
-          cols="70"
-          placeholder="Enter email text here..."
+          rows="10"
+          margin="20px"
+          placeholder="Paste email text here..."
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={{ marginBottom: '10px', padding: '10px', fontSize: '16px' }}
         />
 
-        <br />
-
-        <button id = "checkBtn"onClick = {classifyEmail} style={{ padding: '10px 20px', fontSize: '16px' }}>
-          Check Email
+        <button id="checkBtn" onClick={classifyEmail} style={{margin: "5px", justifyContent:"center", display:"flex", alignItems:"center"}}>
+          Analyze Email
         </button>
 
         {result && (
-          <div style={{ marginTop: '20px', fontSize: '18px' }}>
-            <h2>{result.spam ? "Spam Detected!" : "Not Spam"}</h2>
-            <p className = "result">Confidence: {result.confidence.toFixed(2)}%</p>
+          <div className="result">
+            <h2 className={result.spam ? "spam" : "ham"}>
+              {result.spam ? "SPAM EMAIL: Spam Detected" : "HAM EMAIL: Legitimate Email"}
+            </h2>
+
+            <p className="confidence-text">
+              Confidence: {(result.confidence * 100).toFixed(2)}%
+            </p>
+
+            <div className="confidence-bar">
+              <div
+                className={`fill ${result.spam ? "spam-fill" : "ham-fill"}`}
+                style={{ width: `${result.confidence * 100}%` }}
+              ></div>
+            </div>
+
+            {result.topSpam.length > 0 && (
+              <div className="indicators">
+                <h3>🔍 Top Spam Indicators</h3>
+                {result.topSpam.map((item, index) => (
+                  <p key={index}>
+                    "{item.word}" (+{item.value.toFixed(2)})
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {result.topHam.length > 0 && (
+              <div className="indicators">
+                <h3>🛡 Top Ham Indicators</h3>
+                {result.topHam.map((item, index) => (
+                  <p key={index}>
+                    "{item.word}" ({item.value.toFixed(2)})
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
+        <div className="model-info">
+          <p>Model: Logistic Regression</p>
+          <p>Vocabulary Size: {vocab.length}</p>
+          <p>Feature Engineering: Bag-of-Words</p>
+        </div>
       </div>
     </div>
-
-
   );
+}
 
-
-
-
-}  
-
-export default App; 
+export default App;
